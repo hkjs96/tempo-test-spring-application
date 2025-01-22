@@ -26,7 +26,12 @@ repositories {
 dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
 	implementation 'org.springframework.boot:spring-boot-starter-webflux'
-	implementation 'io.opentelemetry.instrumentation:opentelemetry-spring-boot-starter:2.11.0'
+	implementation 'org.springframework.boot:spring-boot-starter-web'
+//	implementation 'io.opentelemetry.instrumentation:opentelemetry-spring-boot-starter:2.11.0'
+
+	implementation 'org.slf4j:slf4j-api:2.0.16'
+	implementation 'ch.qos.logback:logback-classic:1.5.16'
+	implementation 'io.opentelemetry:opentelemetry-api:1.46.0'
 
 	compileOnly 'org.projectlombok:lombok'
 	runtimeOnly 'com.h2database:h2'
