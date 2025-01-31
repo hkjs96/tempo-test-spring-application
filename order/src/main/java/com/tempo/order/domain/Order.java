@@ -6,6 +6,9 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
+import java.util.ArrayList;
+import java.util.List;
+
 @Entity
 @Table(name = "orders")
 @Getter
@@ -21,22 +24,26 @@ public class Order {
     @Enumerated(EnumType.STRING)
     private OrderStatus status;
 
+    @ElementCollection
+    @CollectionTable(name = "order_status_changes",
+            joinColumns = @JoinColumn(name = "order_id"))
+    @OrderBy("createdAt DESC")
+    private List<OrderStatusChange> statusChanges = new ArrayList<>();
+
     @Builder
     public Order(Long productId, Integer quantity) {
         this.productId = productId;
         this.quantity = quantity;
         this.status = OrderStatus.CREATED;
+        addStatusChange(OrderStatus.CREATED);
     }
 
-    public OrderHistory updateStatus(OrderStatus newStatus, String message) {
-        OrderStatus previousStatus = this.status;
+    public void updateStatus(OrderStatus newStatus) {
         this.status = newStatus;
+        addStatusChange(newStatus);
+    }
 
-        return OrderHistory.builder()
-                .order(this)
-                .previousStatus(previousStatus)
-                .newStatus(newStatus)
-                .message(message)
-                .build();
+    private void addStatusChange(OrderStatus status) {
+        this.statusChanges.add(new OrderStatusChange(status));
     }
 }
