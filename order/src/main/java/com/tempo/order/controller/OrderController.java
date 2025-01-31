@@ -25,8 +25,14 @@ public class OrderController {
 
     @PostMapping
     public Mono<ResponseEntity<OrderResponse>> createOrder(@RequestBody OrderRequest request) {
+        log.info("주문 생성 요청 수신 - productId: {}, quantity: {}",
+                request.getProductId(), request.getQuantity());
         return orderService.createOrder(request)
-                .map(response -> ResponseEntity.status(HttpStatus.CREATED).body(response));
+                .map(response -> {
+                    log.info("주문 생성 완료 - orderId: {}", response.getId());
+                    return ResponseEntity.status(HttpStatus.CREATED).body(response);
+                })
+                .doOnError(error -> log.error("주문 생성 실패 - error: {}", error.getMessage()));
     }
 
     @PutMapping("/{orderId}/status")

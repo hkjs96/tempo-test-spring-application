@@ -1,0 +1,739 @@
+--- C:\Users\MZC01-TLSGKS678\Desktop\workspace\lgtm\order\src\main\java\com\tempo\order\OrderApplication.java --- 
+package com.tempo.order;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+@SpringBootApplication
+public class OrderApplication {
+
+	public static void main(String[] args) {
+		SpringApplication.run(OrderApplication.class, args);
+	}
+
+}
+ 
+--- C:\Users\MZC01-TLSGKS678\Desktop\workspace\lgtm\order\src\main\java\com\tempo\order\client\ProductClient.java --- 
+package com.tempo.order.client;
+
+import com.tempo.order.dto.ProductResponse;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Component;
+import org.springframework.web.reactive.function.client.WebClient;
+import reactor.core.publisher.Mono;
+
+@Component
+@RequiredArgsConstructor
+public class ProductClient {
+    private final WebClient webClient;
+
+    public Mono<ProductResponse> getProduct(Long id) {
+        return webClient.get()
+                .uri("/api/products/{id}", id)
+                .retrieve()
+                .bodyToMono(ProductResponse.class);
+    }
+
+    public Mono<Void> updateStock(Long id, Integer quantity) {
+        return webClient.put()
+                .uri("/api/products/{id}/stock?quantity={quantity}", id, quantity)
+                .retrieve()
+                .bodyToMono(Void.class);
+    }
+} 
+--- C:\Users\MZC01-TLSGKS678\Desktop\workspace\lgtm\order\src\main\java\com\tempo\order\config\WebClientConfig.java --- 
+package com.tempo.order.config;
+
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.web.reactive.function.client.WebClient;
+
+@Configuration
+public class WebClientConfig {
+    @Bean
+    public WebClient webClient() {
+        return WebClient.builder()
+                .baseUrl("http://localhost:8081")  // Product 서비스 주소
+                .build();
+    }
+} 
+--- C:\Users\MZC01-TLSGKS678\Desktop\workspace\lgtm\order\src\main\java\com\tempo\order\controller\OrderController.java --- 
+package com.tempo.order.controller;
+
+import com.tempo.order.domain.OrderHistory;
+import com.tempo.order.dto.OrderHistoryResponse;
+import com.tempo.order.dto.OrderRequest;
+import com.tempo.order.dto.OrderResponse;
+import com.tempo.order.dto.OrderStatusUpdateRequest;
+import com.tempo.order.service.OrderService;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+import reactor.core.publisher.Mono;
+
+import java.util.List;
+import java.util.stream.Collectors;
+
+@RestController
+@RequestMapping("/api/orders")
+@RequiredArgsConstructor
+@Slf4j
+public class OrderController {
+    private final OrderService orderService;
+
+    @PostMapping
+    public Mono<ResponseEntity<OrderResponse>> createOrder(@RequestBody OrderRequest request) {
+        return orderService.createOrder(request)
+                .map(response -> ResponseEntity.status(HttpStatus.CREATED).body(response));
+    }
+
+    @PutMapping("/{orderId}/status")
+    public ResponseEntity<OrderResponse> updateOrderStatus(
+            @PathVariable Long orderId,
+            @RequestBody OrderStatusUpdateRequest request) {
+        log.info("주문 상태 변경 요청 - orderId: {}, newStatus: {}", orderId, request.getStatus());
+        return ResponseEntity.ok(orderService.updateOrderStatus(orderId, request.getStatus()));
+    }
+
+    @GetMapping("/{orderId}/history")
+    public ResponseEntity<List<OrderHistoryResponse>> getOrderHistory(@PathVariable Long orderId) {
+        List<OrderHistory> histories = orderService.getOrderHistory(orderId);
+        List<OrderHistoryResponse> response = histories.stream()
+                .map(OrderHistoryResponse::new)
+                .collect(Collectors.toList());
+        return ResponseEntity.ok(response);
+    }
+} 
+--- C:\Users\MZC01-TLSGKS678\Desktop\workspace\lgtm\order\src\main\java\com\tempo\order\domain\Order.java --- 
+package com.tempo.order.domain;
+
+import jakarta.persistence.*;
+import lombok.AccessLevel;
+import lombok.Builder;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+
+import java.util.ArrayList;
+import java.util.List;
+
+@Entity
+@Table(name = "orders")
+@Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+public class Order {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    private Long productId;
+    private Integer quantity;
+
+    @Enumerated(EnumType.STRING)
+    private OrderStatus status;
+
+    @ElementCollection
+    @CollectionTable(name = "order_status_changes",
+            joinColumns = @JoinColumn(name = "order_id"))
+    @OrderBy("createdAt DESC")
+    private List<OrderStatusChange> statusChanges = new ArrayList<>();
+
+    @Builder
+    public Order(Long productId, Integer quantity) {
+        this.productId = productId;
+        this.quantity = quantity;
+        this.status = OrderStatus.CREATED;
+        addStatusChange(OrderStatus.CREATED);
+    }
+
+    public void updateStatus(OrderStatus newStatus) {
+        this.status = newStatus;
+        addStatusChange(newStatus);
+    }
+
+    private void addStatusChange(OrderStatus status) {
+        this.statusChanges.add(new OrderStatusChange(status));
+    }
+}
+ 
+--- C:\Users\MZC01-TLSGKS678\Desktop\workspace\lgtm\order\src\main\java\com\tempo\order\domain\OrderHistory.java --- 
+package com.tempo.order.domain;
+
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import jakarta.persistence.*;
+import lombok.AccessLevel;
+import lombok.Builder;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+
+import java.time.LocalDateTime;
+
+@Entity
+@Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+public class OrderHistory {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "order_id")
+    @JsonIgnore  // 추가
+    private Order order;
+
+    @Enumerated(EnumType.STRING)
+    private OrderStatus previousStatus;
+
+    @Enumerated(EnumType.STRING)
+    private OrderStatus newStatus;
+
+    private String message;
+    private LocalDateTime createdAt;
+
+    @Builder
+    public OrderHistory(Order order, OrderStatus previousStatus, OrderStatus newStatus, String message) {
+        this.order = order;
+        this.previousStatus = previousStatus;
+        this.newStatus = newStatus;
+        this.message = message;
+        this.createdAt = LocalDateTime.now();
+    }
+
+    // OrderResponse를 위한 새로운 메서드 추가
+    public Long getOrderId() {
+        return order != null ? order.getId() : null;
+    }
+}
+ 
+--- C:\Users\MZC01-TLSGKS678\Desktop\workspace\lgtm\order\src\main\java\com\tempo\order\domain\OrderStatus.java --- 
+package com.tempo.order.domain;
+
+public enum OrderStatus {
+    CREATED,      // 주문 생성
+    CONFIRMED,    // 주문 확정
+    CANCELLED,    // 주문 취소
+    COMPLETED     // 주문 완료
+} 
+--- C:\Users\MZC01-TLSGKS678\Desktop\workspace\lgtm\order\src\main\java\com\tempo\order\domain\OrderStatusChange.java --- 
+package com.tempo.order.domain;
+
+import jakarta.persistence.Embeddable;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import lombok.AccessLevel;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+
+import java.time.LocalDateTime;
+
+@Embeddable
+@Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+public class OrderStatusChange {
+    @Enumerated(EnumType.STRING)
+    private OrderStatus status;
+
+    private LocalDateTime createdAt;
+
+    public OrderStatusChange(OrderStatus status) {
+        this.status = status;
+        this.createdAt = LocalDateTime.now();
+    }
+} 
+--- C:\Users\MZC01-TLSGKS678\Desktop\workspace\lgtm\order\src\main\java\com\tempo\order\dto\OrderHistoryResponse.java --- 
+package com.tempo.order.dto;
+
+import com.tempo.order.domain.OrderHistory;
+import com.tempo.order.domain.OrderStatus;
+import lombok.Getter;
+
+import java.time.LocalDateTime;
+
+@Getter
+public class OrderHistoryResponse {
+    private final Long id;
+    private final Long orderId;
+    private final OrderStatus previousStatus;
+    private final OrderStatus newStatus;
+    private final String message;
+    private final LocalDateTime createdAt;
+
+    public OrderHistoryResponse(OrderHistory history) {
+        this.id = history.getId();
+        this.orderId = history.getOrderId();
+        this.previousStatus = history.getPreviousStatus();
+        this.newStatus = history.getNewStatus();
+        this.message = history.getMessage();
+        this.createdAt = history.getCreatedAt();
+    }
+} 
+--- C:\Users\MZC01-TLSGKS678\Desktop\workspace\lgtm\order\src\main\java\com\tempo\order\dto\OrderRequest.java --- 
+package com.tempo.order.dto;
+
+import lombok.Builder;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+
+@Getter
+@NoArgsConstructor
+public class OrderRequest {
+    private Long productId;
+    private Integer quantity;
+
+    @Builder
+    public OrderRequest(Long productId, Integer quantity) {
+        this.productId = productId;
+        this.quantity = quantity;
+    }
+} 
+--- C:\Users\MZC01-TLSGKS678\Desktop\workspace\lgtm\order\src\main\java\com\tempo\order\dto\OrderResponse.java --- 
+package com.tempo.order.dto;
+
+import com.tempo.order.domain.Order;
+import com.tempo.order.domain.OrderStatus;
+import lombok.Builder;
+import lombok.Getter;
+
+@Getter
+public class OrderResponse {
+    private final Long id;
+    private final Long productId;
+    private final Integer quantity;
+    private final OrderStatus status;
+
+    @Builder
+    public OrderResponse(Order order) {
+        this.id = order.getId();
+        this.productId = order.getProductId();
+        this.quantity = order.getQuantity();
+        this.status = order.getStatus();
+    }
+}
+ 
+--- C:\Users\MZC01-TLSGKS678\Desktop\workspace\lgtm\order\src\main\java\com\tempo\order\dto\OrderStatusChangeResponse.java --- 
+package com.tempo.order.dto;
+
+import com.tempo.order.domain.OrderStatus;
+import com.tempo.order.domain.OrderStatusChange;
+import lombok.Getter;
+
+import java.time.LocalDateTime;
+
+@Getter
+public class OrderStatusChangeResponse {
+    private final OrderStatus status;
+    private final LocalDateTime createdAt;
+
+    public OrderStatusChangeResponse(OrderStatusChange change) {
+        this.status = change.getStatus();
+        this.createdAt = change.getCreatedAt();
+    }
+} 
+--- C:\Users\MZC01-TLSGKS678\Desktop\workspace\lgtm\order\src\main\java\com\tempo\order\dto\OrderStatusUpdateRequest.java --- 
+package com.tempo.order.dto;
+
+import com.tempo.order.domain.OrderStatus;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+
+@Getter
+@NoArgsConstructor
+public class OrderStatusUpdateRequest {
+    private OrderStatus status;
+} 
+--- C:\Users\MZC01-TLSGKS678\Desktop\workspace\lgtm\order\src\main\java\com\tempo\order\dto\ProductResponse.java --- 
+package com.tempo.order.dto;
+
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+
+import java.math.BigDecimal;
+
+@Getter
+@NoArgsConstructor
+public class ProductResponse {
+    private Long id;
+    private String name;
+    private BigDecimal price;
+    private Integer stock;
+} 
+--- C:\Users\MZC01-TLSGKS678\Desktop\workspace\lgtm\order\src\main\java\com\tempo\order\repository\OrderHistoryRepository.java --- 
+package com.tempo.order.repository;
+
+import com.tempo.order.domain.OrderHistory;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+
+import java.util.List;
+
+@Repository
+public interface OrderHistoryRepository extends JpaRepository<OrderHistory, Long> {
+    List<OrderHistory> findByOrderIdOrderByCreatedAtDesc(Long orderId);
+} 
+--- C:\Users\MZC01-TLSGKS678\Desktop\workspace\lgtm\order\src\main\java\com\tempo\order\repository\OrderRepository.java --- 
+package com.tempo.order.repository;
+
+import com.tempo.order.domain.Order;
+import com.tempo.order.domain.OrderStatus;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+
+import java.util.List;
+import java.util.Optional;
+
+@Repository
+public interface OrderRepository extends JpaRepository<Order, Long> {
+    // 주문 ID로 주문 엔티티 조회
+    Optional<Order> findById(Long id);
+
+    // 상품 ID로 주문 목록 조회
+    List<Order> findByProductId(Long productId);
+
+    // 주문 상태로 주문 목록 조회
+    List<Order> findByStatus(OrderStatus status);
+
+    // 상품 ID와 주문 상태로 주문 목록 조회
+    List<Order> findByProductIdAndStatus(Long productId, OrderStatus status);
+} 
+--- C:\Users\MZC01-TLSGKS678\Desktop\workspace\lgtm\order\src\main\java\com\tempo\order\service\OrderService.java --- 
+package com.tempo.order.service;
+
+import com.tempo.order.client.ProductClient;
+import com.tempo.order.domain.Order;
+import com.tempo.order.domain.OrderHistory;
+import com.tempo.order.domain.OrderStatus;
+import com.tempo.order.dto.OrderRequest;
+import com.tempo.order.dto.OrderResponse;
+import com.tempo.order.dto.OrderStatusChangeResponse;
+import com.tempo.order.repository.OrderHistoryRepository;
+import com.tempo.order.repository.OrderRepository;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import reactor.core.publisher.Mono;
+
+import java.util.List;
+import java.util.stream.Collectors;
+
+@Service
+@RequiredArgsConstructor
+@Slf4j
+public class OrderService {
+    private final OrderRepository orderRepository;
+    private final OrderHistoryRepository historyRepository;
+    private final ProductClient productClient;
+
+    @Transactional
+    public Mono<OrderResponse> createOrder(OrderRequest request) {
+        return productClient.getProduct(request.getProductId())
+                .flatMap(product -> {
+                    if (product.getStock() < request.getQuantity()) {
+                        return Mono.error(new IllegalArgumentException("재고가 부족합니다."));
+                    }
+
+                    Order order = Order.builder()
+                            .productId(request.getProductId())
+                            .quantity(request.getQuantity())
+                            .build();
+
+                    Order savedOrder = orderRepository.save(order);
+                    OrderHistory history = savedOrder.updateStatus(OrderStatus.CREATED, "주문이 생성되었습니다.");
+                    historyRepository.save(history);
+
+                    return productClient.updateStock(request.getProductId(), request.getQuantity())
+                            .then(Mono.just(new OrderResponse(savedOrder)));
+                });
+    }
+
+    @Transactional
+    public OrderResponse updateOrderStatus(Long orderId, OrderStatus newStatus) {
+        log.info("주문 상태 업데이트 시작 - orderId: {}, newStatus: {}", orderId, newStatus);
+
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new IllegalArgumentException("주문을 찾을 수 없습니다."));
+
+        order.updateStatus(newStatus);
+        log.info("주문 상태 업데이트 완료 - orderId: {}, status: {}", orderId, newStatus);
+
+        return new OrderResponse(order);
+    }
+
+    @Transactional(readOnly = true)
+    public List<OrderStatusChangeResponse> getOrderStatusChanges(Long orderId) {
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new IllegalArgumentException("주문을 찾을 수 없습니다."));
+
+        return order.getStatusChanges().stream()
+                .map(OrderStatusChangeResponse::new)
+                .collect(Collectors.toList());
+    }
+
+    public List<OrderHistory> getOrderHistory(Long orderId) {
+        return historyRepository.findByOrderIdOrderByCreatedAtDesc(orderId)
+                .stream()
+                .map(history -> {
+                    // 명시적으로 Order 정보 로딩
+                    history.getOrder().getId();  // 지연 로딩 강제 초기화
+                    return history;
+                })
+                .collect(Collectors.toList());
+    }
+} 
+--- C:\Users\MZC01-TLSGKS678\Desktop\workspace\lgtm\order\src\test\java\com\tempo\order\OrderApplicationTests.java --- 
+package com.tempo.order;
+
+import org.junit.jupiter.api.Test;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.ActiveProfiles;
+
+@SpringBootTest
+@ActiveProfiles("test")  //
+class OrderApplicationTests {
+
+	@Test
+	void contextLoads() {
+	}
+
+}
+ 
+--- C:\Users\MZC01-TLSGKS678\Desktop\workspace\lgtm\product\src\main\java\com\tempo\product\ProductApplication.java --- 
+package com.tempo.product;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+@SpringBootApplication
+public class ProductApplication {
+
+	public static void main(String[] args) {
+		SpringApplication.run(ProductApplication.class, args);
+	}
+
+}
+ 
+--- C:\Users\MZC01-TLSGKS678\Desktop\workspace\lgtm\product\src\main\java\com\tempo\product\controller\ProductController.java --- 
+package com.tempo.product.controller;
+
+import com.tempo.product.dto.ProductRequest;
+import com.tempo.product.dto.ProductResponse;
+import com.tempo.product.service.ProductService;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+@RestController
+@RequestMapping("/api/products")
+@RequiredArgsConstructor
+@Slf4j
+class ProductController {
+    private final ProductService productService;
+
+    @GetMapping("/{id}")
+    public ResponseEntity<ProductResponse> getProduct(@PathVariable Long id) {
+        log.info("GET /api/products/{} 요청 수신", id);
+        ProductResponse response = productService.getProduct(id);
+        log.info("GET /api/products/{} 응답 완료", id);
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping
+    public ResponseEntity<ProductResponse> createProduct(@RequestBody ProductRequest request) {
+        log.info("POST /api/products 요청 수신 - name: {}", request.getName());
+        ProductResponse response = productService.createProduct(request);
+        log.info("POST /api/products 응답 완료 - productId: {}", response.getId());
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(response);
+    }
+
+    @PutMapping("/{id}/stock")
+    public ResponseEntity<Void> updateStock(
+            @PathVariable Long id,
+            @RequestParam Integer quantity) {
+        log.info("PUT /api/products/{}/stock 요청 수신 - quantity: {}", id, quantity);
+        productService.updateStock(id, quantity);
+        log.info("PUT /api/products/{}/stock 응답 완료", id);
+        return ResponseEntity.ok().build();
+    }
+} 
+--- C:\Users\MZC01-TLSGKS678\Desktop\workspace\lgtm\product\src\main\java\com\tempo\product\domain\Product.java --- 
+package com.tempo.product.domain;
+
+import jakarta.persistence.*;
+import lombok.AccessLevel;
+import lombok.Builder;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+
+import java.math.BigDecimal;
+
+@Entity
+@Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+public class Product {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @Column(nullable = false)
+    private String name;
+
+    @Column(nullable = false)
+    private BigDecimal price;
+
+    @Column(nullable = false)
+    private Integer stock;
+
+    @Builder
+    public Product(String name, BigDecimal price, Integer stock) {
+        this.name = name;
+        this.price = price;
+        this.stock = stock;
+    }
+
+    public void updateStock(Integer quantity) {
+        if (this.stock < quantity) {
+            throw new IllegalArgumentException("재고가 부족합니다.");
+        }
+        this.stock -= quantity;
+    }
+} 
+--- C:\Users\MZC01-TLSGKS678\Desktop\workspace\lgtm\product\src\main\java\com\tempo\product\dto\ProductRequest.java --- 
+package com.tempo.product.dto;
+
+import lombok.Builder;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+
+import java.math.BigDecimal;
+
+@Getter
+@NoArgsConstructor
+public class ProductRequest {
+    private String name;
+    private BigDecimal price;
+    private Integer stock;
+
+    @Builder
+    public ProductRequest(String name, BigDecimal price, Integer stock) {
+        this.name = name;
+        this.price = price;
+        this.stock = stock;
+    }
+}
+ 
+--- C:\Users\MZC01-TLSGKS678\Desktop\workspace\lgtm\product\src\main\java\com\tempo\product\dto\ProductResponse.java --- 
+package com.tempo.product.dto;
+
+import com.tempo.product.domain.Product;
+import lombok.Builder;
+import lombok.Getter;
+
+import java.math.BigDecimal;
+
+@Getter
+public class ProductResponse {
+    private final Long id;
+    private final String name;
+    private final BigDecimal price;
+    private final Integer stock;
+
+    @Builder
+    public ProductResponse(Product product) {
+        this.id = product.getId();
+        this.name = product.getName();
+        this.price = product.getPrice();
+        this.stock = product.getStock();
+    }
+} 
+--- C:\Users\MZC01-TLSGKS678\Desktop\workspace\lgtm\product\src\main\java\com\tempo\product\repository\ProductRepository.java --- 
+package com.tempo.product.repository;
+
+import com.tempo.product.domain.Product;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+
+@Repository
+public interface ProductRepository extends JpaRepository<Product, Long> {
+} 
+--- C:\Users\MZC01-TLSGKS678\Desktop\workspace\lgtm\product\src\main\java\com\tempo\product\service\ProductService.java --- 
+package com.tempo.product.service;
+
+import com.tempo.product.domain.Product;
+import com.tempo.product.dto.ProductRequest;
+import com.tempo.product.dto.ProductResponse;
+import com.tempo.product.repository.ProductRepository;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+@Service
+@RequiredArgsConstructor
+@Slf4j
+public class ProductService {
+    private final ProductRepository productRepository;
+
+    @Transactional(readOnly = true)
+    public ProductResponse getProduct(Long id) {
+        log.info("상품 조회 시작 - productId: {}", id);
+        Product product = productRepository.findById(id)
+                .orElseThrow(() -> {
+                    log.error("상품을 찾을 수 없음 - productId: {}", id);
+                    return new IllegalArgumentException("상품을 찾을 수 없습니다.");
+                });
+        log.info("상품 조회 완료 - productId: {}, name: {}", id, product.getName());
+        return new ProductResponse(product);
+    }
+
+    @Transactional
+    public ProductResponse createProduct(ProductRequest request) {
+        log.info("상품 생성 시작 - name: {}", request.getName());
+        Product product = Product.builder()
+                .name(request.getName())
+                .price(request.getPrice())
+                .stock(request.getStock())
+                .build();
+
+        Product savedProduct = productRepository.save(product);
+        log.info("상품 생성 완료 - productId: {}, name: {}", savedProduct.getId(), savedProduct.getName());
+        return new ProductResponse(savedProduct);
+    }
+
+    @Transactional
+    public void updateStock(Long id, Integer quantity) {
+        log.info("재고 업데이트 시작 - productId: {}, quantity: {}", id, quantity);
+        Product product = productRepository.findById(id)
+                .orElseThrow(() -> {
+                    log.error("상품을 찾을 수 없음 - productId: {}", id);
+                    return new IllegalArgumentException("상품을 찾을 수 없습니다.");
+                });
+
+        try {
+            product.updateStock(quantity);
+            log.info("재고 업데이트 완료 - productId: {}, updatedStock: {}", id, product.getStock());
+        } catch (IllegalArgumentException e) {
+            log.error("재고 부족 발생 - productId: {}, requestedQuantity: {}, currentStock: {}",
+                    id, quantity, product.getStock());
+            throw e;
+        }
+    }
+} 
+--- C:\Users\MZC01-TLSGKS678\Desktop\workspace\lgtm\product\src\test\java\com\tempo\product\ProductApplicationTests.java --- 
+package com.tempo.product;
+
+import org.junit.jupiter.api.Test;
+import org.springframework.boot.test.context.SpringBootTest;
+
+@SpringBootTest
+class ProductApplicationTests {
+
+	@Test
+	void contextLoads() {
+	}
+
+}
+ 
