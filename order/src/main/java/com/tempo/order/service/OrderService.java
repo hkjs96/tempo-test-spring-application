@@ -9,6 +9,7 @@ import com.tempo.order.dto.OrderResponse;
 import com.tempo.order.repository.OrderHistoryRepository;
 import com.tempo.order.repository.OrderRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import reactor.core.publisher.Mono;
@@ -18,6 +19,7 @@ import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class OrderService {
     private final OrderRepository orderRepository;
     private final OrderHistoryRepository historyRepository;
