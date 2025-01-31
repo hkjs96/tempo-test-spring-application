@@ -8,8 +8,6 @@ import com.tempo.order.dto.OrderRequest;
 import com.tempo.order.dto.OrderResponse;
 import com.tempo.order.repository.OrderHistoryRepository;
 import com.tempo.order.repository.OrderRepository;
-import io.opentelemetry.api.trace.Span;
-import io.opentelemetry.api.trace.Tracer;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -23,70 +21,42 @@ public class OrderService {
     private final OrderRepository orderRepository;
     private final OrderHistoryRepository historyRepository;
     private final ProductClient productClient;
-    private final Tracer tracer;
 
     @Transactional
     public Mono<OrderResponse> createOrder(OrderRequest request) {
-        Span span = tracer.spanBuilder("createOrder").startSpan();
+        return productClient.getProduct(request.getProductId())
+                .flatMap(product -> {
+                    if (product.getStock() < request.getQuantity()) {
+                        return Mono.error(new IllegalArgumentException("재고가 부족합니다."));
+                    }
 
-        try (var scope = span.makeCurrent()) {
-            span.setAttribute("productId", request.getProductId());
-            span.setAttribute("quantity", request.getQuantity());
+                    Order order = Order.builder()
+                            .productId(request.getProductId())
+                            .quantity(request.getQuantity())
+                            .build();
 
-            return productClient.getProduct(request.getProductId())
-                    .flatMap(product -> {
-                        if (product.getStock() < request.getQuantity()) {
-                            span.setAttribute("error", true);
-                            span.setAttribute("errorMessage", "재고 부족");
-                            return Mono.error(new IllegalArgumentException("재고가 부족합니다."));
-                        }
+                    Order savedOrder = orderRepository.save(order);
+                    OrderHistory history = savedOrder.updateStatus(OrderStatus.CREATED, "주문이 생성되었습니다.");
+                    historyRepository.save(history);
 
-                        Order order = Order.builder()
-                                .productId(request.getProductId())
-                                .quantity(request.getQuantity())
-                                .build();
-
-                        Order savedOrder = orderRepository.save(order);
-                        OrderHistory history = savedOrder.updateStatus(OrderStatus.CREATED, "주문이 생성되었습니다.");
-                        historyRepository.save(history);
-
-                        return productClient.updateStock(request.getProductId(), request.getQuantity())
-                                .then(Mono.just(new OrderResponse(savedOrder)));
-                    });
-        } finally {
-            span.end();
-        }
+                    return productClient.updateStock(request.getProductId(), request.getQuantity())
+                            .then(Mono.just(new OrderResponse(savedOrder)));
+                });
     }
 
     @Transactional
     public OrderResponse updateOrderStatus(Long orderId, OrderStatus newStatus, String message) {
-        Span span = tracer.spanBuilder("updateOrderStatus").startSpan();
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new IllegalArgumentException("주문을 찾을 수 없습니다."));
 
-        try (var scope = span.makeCurrent()) {
-            span.setAttribute("orderId", orderId);
-            span.setAttribute("newStatus", newStatus.name());
+        OrderHistory history = order.updateStatus(newStatus, message);
+        historyRepository.save(history);
 
-            Order order = orderRepository.findById(orderId)
-                    .orElseThrow(() -> new IllegalArgumentException("주문을 찾을 수 없습니다."));
-
-            OrderHistory history = order.updateStatus(newStatus, message);
-            historyRepository.save(history);
-
-            return new OrderResponse(order);
-        } finally {
-            span.end();
-        }
+        return new OrderResponse(order);
     }
 
     @Transactional(readOnly = true)
     public List<OrderHistory> getOrderHistory(Long orderId) {
-        Span span = tracer.spanBuilder("getOrderHistory").startSpan();
-
-        try (var scope = span.makeCurrent()) {
-            span.setAttribute("orderId", orderId);
-            return historyRepository.findByOrderIdOrderByCreatedAtDesc(orderId);
-        } finally {
-            span.end();
-        }
+        return historyRepository.findByOrderIdOrderByCreatedAtDesc(orderId);
     }
 }
