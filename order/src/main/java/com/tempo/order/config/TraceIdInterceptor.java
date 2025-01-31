@@ -9,7 +9,7 @@ import org.slf4j.MDC;
 import org.springframework.web.servlet.HandlerInterceptor;
 
 public class TraceIdInterceptor implements HandlerInterceptor {
-    private static final Tracer tracer = GlobalOpenTelemetry.getTracer("my-app");
+    private static final Tracer tracer = GlobalOpenTelemetry.getTracer("app-tracer");
 
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
