@@ -32,7 +32,8 @@ dependencies {
 	implementation 'org.slf4j:slf4j-api:2.0.16'
 	implementation 'ch.qos.logback:logback-classic:1.5.16'
 	implementation 'ch.qos.logback:logback-core:1.5.16'
-	implementation 'io.opentelemetry:opentelemetry-api:1.46.0'
+//	implementation 'io.opentelemetry:opentelemetry-api:1.46.0'
+	implementation 'io.opentelemetry.instrumentation:opentelemetry-logback-mdc-1.0:2.12.0-alpha'
 
 	compileOnly 'org.projectlombok:lombok'
 	runtimeOnly 'com.h2database:h2'

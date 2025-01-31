@@ -44,3 +44,11 @@ otel:
       enabled: true
     jdbc:
       enabled: false
+
+logging:
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] [trace=%X{traceId:-},span=%X{spanId:-}] %-5level %logger{36} - %msg%n"
+  level:
+    root: INFO
+    com.tempo.product: DEBUG
+    org.springframework.web: INFO
