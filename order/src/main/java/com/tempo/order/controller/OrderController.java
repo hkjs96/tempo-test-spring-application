@@ -1,6 +1,7 @@
 package com.tempo.order.controller;
 
 import com.tempo.order.domain.OrderHistory;
+import com.tempo.order.dto.OrderHistoryResponse;
 import com.tempo.order.dto.OrderRequest;
 import com.tempo.order.dto.OrderResponse;
 import com.tempo.order.dto.OrderStatusUpdateRequest;
@@ -12,6 +13,7 @@ import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Mono;
 
 import java.util.List;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/orders")
@@ -35,7 +37,11 @@ public class OrderController {
     }
 
     @GetMapping("/{orderId}/history")
-    public ResponseEntity<List<OrderHistory>> getOrderHistory(@PathVariable Long orderId) {
-        return ResponseEntity.ok(orderService.getOrderHistory(orderId));
+    public ResponseEntity<List<OrderHistoryResponse>> getOrderHistory(@PathVariable Long orderId) {
+        List<OrderHistory> histories = orderService.getOrderHistory(orderId);
+        List<OrderHistoryResponse> response = histories.stream()
+                .map(OrderHistoryResponse::new)
+                .collect(Collectors.toList());
+        return ResponseEntity.ok(response);
     }
 }

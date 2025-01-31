@@ -1,5 +1,6 @@
 package com.tempo.order.domain;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Builder;
@@ -18,6 +19,7 @@ public class OrderHistory {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "order_id")
+    @JsonIgnore  // 추가
     private Order order;
 
     @Enumerated(EnumType.STRING)
@@ -36,5 +38,10 @@ public class OrderHistory {
         this.newStatus = newStatus;
         this.message = message;
         this.createdAt = LocalDateTime.now();
+    }
+
+    // OrderResponse를 위한 새로운 메서드 추가
+    public Long getOrderId() {
+        return order != null ? order.getId() : null;
     }
 }

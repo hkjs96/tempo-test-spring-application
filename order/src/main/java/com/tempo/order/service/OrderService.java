@@ -14,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 import reactor.core.publisher.Mono;
 
 import java.util.List;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -55,8 +56,14 @@ public class OrderService {
         return new OrderResponse(order);
     }
 
-    @Transactional(readOnly = true)
     public List<OrderHistory> getOrderHistory(Long orderId) {
-        return historyRepository.findByOrderIdOrderByCreatedAtDesc(orderId);
+        return historyRepository.findByOrderIdOrderByCreatedAtDesc(orderId)
+                .stream()
+                .map(history -> {
+                    // 명시적으로 Order 정보 로딩
+                    history.getOrder().getId();  // 지연 로딩 강제 초기화
+                    return history;
+                })
+                .collect(Collectors.toList());
     }
 }
