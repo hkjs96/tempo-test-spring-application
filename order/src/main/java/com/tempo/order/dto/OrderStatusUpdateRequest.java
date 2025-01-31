@@ -8,5 +8,4 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 public class OrderStatusUpdateRequest {
     private OrderStatus status;
-    private String message;
 }

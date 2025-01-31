@@ -7,6 +7,7 @@ import com.tempo.order.dto.OrderResponse;
 import com.tempo.order.dto.OrderStatusUpdateRequest;
 import com.tempo.order.service.OrderService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -18,6 +19,7 @@ import java.util.stream.Collectors;
 @RestController
 @RequestMapping("/api/orders")
 @RequiredArgsConstructor
+@Slf4j
 public class OrderController {
     private final OrderService orderService;
 
@@ -31,9 +33,8 @@ public class OrderController {
     public ResponseEntity<OrderResponse> updateOrderStatus(
             @PathVariable Long orderId,
             @RequestBody OrderStatusUpdateRequest request) {
-        OrderResponse response = orderService.updateOrderStatus(
-                orderId, request.getStatus(), request.getMessage());
-        return ResponseEntity.ok(response);
+        log.info("주문 상태 변경 요청 - orderId: {}, newStatus: {}", orderId, request.getStatus());
+        return ResponseEntity.ok(orderService.updateOrderStatus(orderId, request.getStatus()));
     }
 
     @GetMapping("/{orderId}/history")

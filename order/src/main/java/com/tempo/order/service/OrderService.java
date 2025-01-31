@@ -46,13 +46,17 @@ public class OrderService {
     }
 
     @Transactional
-    public OrderResponse updateOrderStatus(Long orderId, OrderStatus newStatus, String message) {
+    public OrderResponse updateOrderStatus(Long orderId, OrderStatus newStatus) {
+        log.info("주문 상태 업데이트 시작 - orderId: {}, newStatus: {}", orderId, newStatus);
+
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new IllegalArgumentException("주문을 찾을 수 없습니다."));
 
-        OrderHistory history = order.updateStatus(newStatus, message);
+        String statusMessage = String.format("주문이 %s 상태로 변경되었습니다.", newStatus);
+        OrderHistory history = order.updateStatus(newStatus, statusMessage);
         historyRepository.save(history);
 
+        log.info("주문 상태 업데이트 완료 - orderId: {}, status: {}", orderId, newStatus);
         return new OrderResponse(order);
     }
 
