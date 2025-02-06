@@ -1,5 +1,6 @@
 package com.tempo.cart.dto;
 
+import com.tempo.cart.domain.CartItem;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -20,5 +21,15 @@ public class CartItemRequest {
         this.quantity = quantity;
         this.productName = productName;
         this.price = price;
+    }
+
+    public CartItem toEntity() {
+        return CartItem.builder()
+                .userId(userId)
+                .productId(productId)
+                .quantity(quantity)
+                .productName(productName)
+                .price(price)
+                .build();
     }
 }

@@ -2,20 +2,59 @@ server:
   port: 8083
 
 spring:
+  docker:
+    compose:
+      enabled: true  # Docker Compose 지원 활성화 (기본값: true)
+      file: "./docker-compose.yml"  # Docker Compose 파일 경로
+      stop:
+        command: down  # 종료 시 동작 (down 또는 stop)
+      lifecycle-management: start_only  # 시작만 관리 (종료 시에는 컨테이너 유지)
+
   application:
     name: cart
+
+  # H2 Database 설정
+  datasource:
+    url: jdbc:h2:mem:cartdb
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+
+  jpa:
+    database-platform: org.hibernate.dialect.H2Dialect
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+
+  # Redis 설정
   data:
     redis:
       host: localhost
       port: 6379
+      timeout: 3000
+      lettuce:
+        pool:
+          max-active: 8
+          max-idle: 8
+          min-idle: 2
+          max-wait: -1
 
+# OpenTelemetry 설정
 otel:
   traces:
     exporter: otlp
   metrics:
-    exporter: none
+    exporter: otlp
   logs:
-    exporter: none
+    exporter: otlp
   exporter:
     otlp:
       endpoint: http://localhost:4317

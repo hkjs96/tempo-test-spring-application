@@ -1,24 +1,39 @@
 package com.tempo.cart.domain;
 
+import jakarta.persistence.*;
+import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 import java.io.Serializable;
 
+@Entity
+@Table(name = "cart_items")
 @Getter
-@NoArgsConstructor
-public class CartItem implements Serializable {
-    private String id;
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+public class CartItem {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @Column(nullable = false)
     private Long userId;
+
+    @Column(nullable = false)
     private Long productId;
+
+    @Column(nullable = false)
     private Integer quantity;
+
+    @Column(nullable = false)
     private String productName;
+
+    @Column(nullable = false)
     private Long price;
 
     @Builder
-    public CartItem(String id, Long userId, Long productId, Integer quantity, String productName, Long price) {
-        this.id = id;
+    public CartItem(Long userId, Long productId, Integer quantity, String productName, Long price) {
         this.userId = userId;
         this.productId = productId;
         this.quantity = quantity;
@@ -30,3 +45,4 @@ public class CartItem implements Serializable {
         this.quantity = quantity;
     }
 }
+
