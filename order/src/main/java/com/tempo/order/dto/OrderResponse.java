@@ -6,6 +6,7 @@ import lombok.Builder;
 import lombok.Getter;
 
 @Getter
+
 public class OrderResponse {
     private final Long id;
     private final Long productId;

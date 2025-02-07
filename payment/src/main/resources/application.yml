@@ -1,0 +1,69 @@
+spring:
+  application:
+    name: payment-service
+  datasource:
+    url: jdbc:h2:mem:paymentdb
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+  jpa:
+    database-platform: org.hibernate.dialect.H2Dialect
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+    open-in-view: false
+
+server:
+  port: 8085
+
+# WebClient ??
+webclient:
+  order-service:
+    base-url: http://localhost:8082
+    connect-timeout: 5000
+    read-timeout: 5000
+    write-timeout: 5000
+    max-in-memory-size: 2000000
+
+# PG? ?? (????)
+pg:
+  test-mode: true
+  api:
+    key: test_key
+    secret: test_secret
+    base-url: http://localhost:9090/pg
+
+# OpenTelemetry ??
+otel:
+  traces:
+    exporter: otlp
+  metrics:
+    exporter: otlp
+  logs:
+    exporter: otlp
+  exporter:
+    otlp:
+      endpoint: http://localhost:4317
+      protocol: grpc
+  service:
+    name: ${spring.application.name}
+  resource:
+    attributes:
+      application: tempo-demo
+      environment: local
+
+logging:
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] [trace=%X{traceId:-},span=%X{spanId:-}] %-5level %logger{36} - %msg%n"
+  level:
+    root: INFO
+    com.tempo.payment: DEBUG
+    org.springframework.web: INFO
+    org.springframework.web.reactive.function.client.ExchangeFunctions: DEBUG

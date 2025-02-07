@@ -51,4 +51,12 @@ public class OrderController {
                 .collect(Collectors.toList());
         return ResponseEntity.ok(response);
     }
+
+    @PutMapping("/{orderId}/payment/complete")
+    public ResponseEntity<OrderResponse> completePayment(@PathVariable Long orderId) {
+        log.info("주문 결제 완료 처리 요청 - orderId: {}", orderId);
+        OrderResponse response = orderService.completePayment(orderId);
+        log.info("주문 결제 완료 처리 완료 - orderId: {}", orderId);
+        return ResponseEntity.ok(response);
+    }
 }

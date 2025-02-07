@@ -120,4 +120,15 @@ public class OrderService {
                 })
                 .collect(Collectors.toList());
     }
+
+    @Transactional
+    public OrderResponse completePayment(Long orderId) {
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new IllegalArgumentException("주문을 찾을 수 없습니다: " + orderId));
+
+        order.updateStatus(OrderStatus.PAYMENT_COMPLETED);
+        Order savedOrder = orderRepository.save(order);
+
+        return new OrderResponse(savedOrder);
+    }
 }

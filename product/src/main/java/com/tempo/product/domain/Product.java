@@ -25,6 +25,9 @@ public class Product {
     @Column(nullable = false)
     private Integer stock;
 
+    @Version
+    private Long version;
+
     @Builder
     public Product(String name, BigDecimal price, Integer stock) {
         this.name = name;
