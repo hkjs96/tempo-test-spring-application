@@ -21,7 +21,7 @@ spring:
     open-in-view: false
 
 server:
-  port: 8085
+  port: 8084
 
 # WebClient ??
 webclient:

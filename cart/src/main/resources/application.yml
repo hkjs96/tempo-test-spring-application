@@ -2,14 +2,6 @@ server:
   port: 8083
 
 spring:
-  docker:
-    compose:
-      enabled: true  # Docker Compose 지원 활성화 (기본값: true)
-      file: "./docker-compose.yml"  # Docker Compose 파일 경로
-      stop:
-        command: down  # 종료 시 동작 (down 또는 stop)
-      lifecycle-management: start_only  # 시작만 관리 (종료 시에는 컨테이너 유지)
-
   application:
     name: cart
 
