@@ -34,9 +34,6 @@ dependencies {
 	implementation 'io.opentelemetry:opentelemetry-sdk'
 	implementation 'io.lettuce:lettuce-core'
 
-	// Docker Java 클라이언트
-	implementation 'org.springframework.boot:spring-boot-docker-compose'
-
 	compileOnly 'org.projectlombok:lombok'
 	runtimeOnly 'com.h2database:h2'
 	annotationProcessor 'org.projectlombok:lombok'
