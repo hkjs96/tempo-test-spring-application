@@ -1,0 +1,765 @@
+
+=== ./src/main/java/com/tempo/payment/client/OrderServiceClient.java ===
+
+package com.tempo.payment.client;
+
+import com.tempo.payment.dto.PaymentCancellationNotificationDto;
+import com.tempo.payment.dto.PaymentCompletionNotificationDto;
+import com.tempo.payment.dto.PaymentFailureNotificationDto;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Component;
+import org.springframework.web.reactive.function.client.WebClient;
+import reactor.core.publisher.Mono;
+
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+
+@Slf4j
+@Component
+@RequiredArgsConstructor
+public class OrderServiceClient {
+
+    private final WebClient webClient;
+    private static final String ORDER_SERVICE_URL = "http://localhost:8082";
+    private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ISO_DATE_TIME;
+
+    public Mono<Void> notifyPaymentComplete(Long orderId, String paymentKey, String paymentMethod) {
+        log.info("주문 서비스에 결제 완료 알림 - orderId: {}", orderId);
+        PaymentCompletionNotificationDto notification = new PaymentCompletionNotificationDto(
+                paymentKey,
+                paymentMethod,
+                LocalDateTime.now().format(DATE_FORMATTER)
+        );
+
+        return webClient.put()
+                .uri(ORDER_SERVICE_URL + "/api/orders/{orderId}/payment/complete", orderId)
+                .bodyValue(notification)
+                .retrieve()
+                .bodyToMono(Void.class)
+                .doOnSuccess(v -> log.info("결제 완료 알림 성공 - orderId: {}", orderId))
+                .doOnError(e -> log.error("결제 완료 알림 실패 - orderId: {}", orderId, e))
+                .onErrorResume(e -> {
+                    log.warn("결제 완료 알림 실패. 재시도 큐에 추가 필요 - orderId: {}", orderId);
+                    return Mono.empty();
+                });
+    }
+
+    public Mono<Void> notifyPaymentFailed(Long orderId, String reason) {
+        log.info("주문 서비스에 결제 실패 알림 - orderId: {}, reason: {}", orderId, reason);
+        PaymentFailureNotificationDto notification = new PaymentFailureNotificationDto(reason);
+
+        return webClient.put()
+                .uri(ORDER_SERVICE_URL + "/api/orders/{orderId}/payment/fail", orderId)
+                .bodyValue(notification)
+                .retrieve()
+                .bodyToMono(Void.class)
+                .doOnSuccess(v -> log.info("결제 실패 알림 성공 - orderId: {}", orderId))
+                .doOnError(e -> log.error("결제 실패 알림 실패 - orderId: {}", orderId, e))
+                .onErrorResume(e -> {
+                    log.warn("결제 실패 알림 실패. 재시도 큐에 추가 필요 - orderId: {}", orderId);
+                    return Mono.empty();
+                });
+    }
+
+    public Mono<Void> notifyPaymentCancelled(Long orderId, String paymentKey, String reason) {
+        log.info("주문 서비스에 결제 취소 알림 - orderId: {}", orderId);
+        PaymentCancellationNotificationDto notification = new PaymentCancellationNotificationDto(
+                paymentKey,
+                reason,
+                LocalDateTime.now().format(DATE_FORMATTER)
+        );
+
+        return webClient.put()
+                .uri(ORDER_SERVICE_URL + "/api/orders/{orderId}/payment/cancel", orderId)
+                .bodyValue(notification)
+                .retrieve()
+                .bodyToMono(Void.class)
+                .doOnSuccess(v -> log.info("결제 취소 알림 성공 - orderId: {}", orderId))
+                .doOnError(e -> log.error("결제 취소 알림 실패 - orderId: {}", orderId, e))
+                .onErrorResume(e -> {
+                    log.warn("결제 취소 알림 실패. 재시도 큐에 추가 필요 - orderId: {}", orderId);
+                    return Mono.empty();
+                });
+    }
+
+    public Mono<Boolean> validateOrder(Long orderId) {
+        log.info("주문 유효성 검증 요청 - orderId: {}", orderId);
+        return webClient.get()
+                .uri(ORDER_SERVICE_URL + "/api/orders/{orderId}/validate", orderId)
+                .retrieve()
+                .bodyToMono(Boolean.class)
+                .doOnSuccess(valid -> log.info("주문 유효성 검증 완료 - orderId: {}, valid: {}", orderId, valid))
+                .doOnError(e -> log.error("주문 유효성 검증 실패 - orderId: {}", orderId, e))
+                .onErrorReturn(false);
+    }
+}
+=== ./src/main/java/com/tempo/payment/client/PgClient.java ===
+
+package com.tempo.payment.client;
+
+import com.tempo.payment.dto.PaymentRequestDto;
+import lombok.Builder;
+import lombok.Getter;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Component;
+import org.springframework.web.reactive.function.client.WebClient;
+import reactor.core.publisher.Mono;
+
+@Slf4j
+@Component
+@RequiredArgsConstructor
+public class PgClient {
+    private final WebClient webClient;
+
+    public Mono<PgPaymentResponse> requestPayment(PaymentRequestDto request) {
+        // 실제 환경에서는 외부 PG사 API를 호출
+        // 테스트를 위해 모의 응답 생성
+        return Mono.just(createMockResponse(request));
+    }
+
+    private PgPaymentResponse createMockResponse(PaymentRequestDto request) {
+        // 카드번호가 "0000"으로 끝나면 실패 처리 (테스트용)
+        boolean isSuccess = !request.getCardNumber().endsWith("0000");
+
+        return PgPaymentResponse.builder()
+                .success(isSuccess)
+                .paymentKey(generatePaymentKey())
+                .errorCode(isSuccess ? null : "CARD_DECLINED")
+                .errorMessage(isSuccess ? null : "카드가 거절되었습니다.")
+                .build();
+    }
+
+    private String generatePaymentKey() {
+        return "PAY-" + System.currentTimeMillis();
+    }
+
+    @Getter
+    @Builder
+    public static class PgPaymentResponse {
+        private final boolean success;
+        private final String paymentKey;
+        private final String errorCode;
+        private final String errorMessage;
+    }
+}
+=== ./src/main/java/com/tempo/payment/controller/PaymentController.java ===
+
+package com.tempo.payment.controller;
+
+import com.tempo.payment.dto.PaymentRequestDto;
+import com.tempo.payment.dto.PaymentResponseDto;
+import com.tempo.payment.dto.PaymentResponseDtoDto;
+import com.tempo.payment.service.PaymentService;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+import reactor.core.publisher.Mono;
+
+import java.util.List;
+
+@Slf4j
+@RestController
+@RequestMapping("/api/payments")
+@RequiredArgsConstructor
+public class PaymentController {
+
+    private final PaymentService paymentService;
+
+    @PostMapping
+    public Mono<ResponseEntity<PaymentResponseDto>> processPayment(@RequestBody PaymentRequestDto request) {
+        log.info("결제 요청 수신 - orderId: {}, amount: {}", request.getOrderId(), request.getAmount());
+        return paymentService.processPayment(request)
+                .map(response -> {
+                    log.info("결제 처리 완료 - paymentId: {}, status: {}", response.getId(), response.getStatus());
+                    return ResponseEntity.status(HttpStatus.CREATED).body(response);
+                });
+    }
+
+    @GetMapping("/{paymentId}")
+    public ResponseEntity<PaymentResponseDto> getPayment(@PathVariable Long paymentId) {
+        log.info("결제 정보 조회 요청 - paymentId: {}", paymentId);
+        PaymentResponseDto response = paymentService.getPayment(paymentId);
+        log.info("결제 정보 조회 완료 - paymentId: {}", paymentId);
+        return ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/order/{orderId}")
+    public ResponseEntity<PaymentResponseDto> getPaymentByOrderId(@PathVariable Long orderId) {
+        log.info("주문별 결제 정보 조회 요청 - orderId: {}", orderId);
+        PaymentResponseDto response = paymentService.getPaymentByOrderId(orderId);
+        log.info("주문별 결제 정보 조회 완료 - orderId: {}", orderId);
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/{paymentId}/cancel")
+    public ResponseEntity<PaymentResponseDto> cancelPayment(@PathVariable Long paymentId) {
+        log.info("결제 취소 요청 - paymentId: {}", paymentId);
+        PaymentResponseDto response = paymentService.cancelPayment(paymentId);
+        log.info("결제 취소 완료 - paymentId: {}", paymentId);
+        return ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/status/{status}")
+    public ResponseEntity<List<PaymentResponseDto>> getPaymentsByStatus(
+            @PathVariable String status) {
+        log.info("상태별 결제 목록 조회 요청 - status: {}", status);
+        List<PaymentResponseDto> responses = paymentService.getPaymentsByStatus(status);
+        log.info("상태별 결제 목록 조회 완료 - status: {}, count: {}", status, responses.size());
+        return ResponseEntity.ok(responses);
+    }
+
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<String> handleIllegalArgument(IllegalArgumentException e) {
+        log.error("잘못된 요청 처리", e);
+        return ResponseEntity.badRequest().body(e.getMessage());
+    }
+}
+
+=== ./src/main/java/com/tempo/payment/domain/Payment.java ===
+
+package com.tempo.payment.domain;
+
+import jakarta.persistence.*;
+import lombok.AccessLevel;
+import lombok.Builder;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import org.springframework.data.annotation.Id;
+
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+
+@Entity
+@Table(name = "payments")
+@Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+public class Payment {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @Column(nullable = false)
+    private Long orderId;
+
+    @Column(nullable = false)
+    private BigDecimal amount;
+
+    @Enumerated(EnumType.STRING)
+    private PaymentStatus status;
+
+    @Enumerated(EnumType.STRING)
+    private PaymentMethod paymentMethod;
+
+    private String paymentKey;  // PG사 결제 키
+
+    private LocalDateTime paidAt;
+    private String failureReason;
+    private LocalDateTime createdAt;
+    private LocalDateTime updatedAt;
+
+    @Builder
+    public Payment(Long orderId, BigDecimal amount, PaymentMethod paymentMethod) {
+        this.orderId = orderId;
+        this.amount = amount;
+        this.paymentMethod = paymentMethod;
+        this.status = PaymentStatus.READY;
+        this.createdAt = LocalDateTime.now();
+        this.updatedAt = LocalDateTime.now();
+    }
+
+    public void updateStatus(PaymentStatus newStatus) {
+        this.status = newStatus;
+        this.updatedAt = LocalDateTime.now();
+
+        if (newStatus == PaymentStatus.COMPLETED) {
+            this.paidAt = LocalDateTime.now();
+        }
+    }
+
+    public void setPaymentKey(String paymentKey) {
+        this.paymentKey = paymentKey;
+        this.updatedAt = LocalDateTime.now();
+    }
+
+    public void fail(String reason) {
+        this.status = PaymentStatus.FAILED;
+        this.failureReason = reason;
+        this.updatedAt = LocalDateTime.now();
+    }
+}
+
+=== ./src/main/java/com/tempo/payment/domain/PaymentMethod.java ===
+
+package com.tempo.payment.domain;
+
+public enum PaymentMethod {
+    CARD,       // 신용카드
+    BANK,       // 계좌이체
+    VIRTUAL,    // 가상계좌
+    MOBILE      // 모바일 결제
+}
+=== ./src/main/java/com/tempo/payment/domain/PaymentStatus.java ===
+
+package com.tempo.payment.domain;
+
+public enum PaymentStatus {
+    READY,      // 결제 준비
+    PENDING,    // 결제 진행 중
+    COMPLETED,  // 결제 완료
+    FAILED,     // 결제 실패
+    CANCELLED   // 결제 취소
+}
+
+=== ./src/main/java/com/tempo/payment/dto/PaymentCancellationNotificationDto.java ===
+
+package com.tempo.payment.dto;
+
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+
+@Getter
+@NoArgsConstructor
+public class PaymentCancellationNotificationDto {
+    private String paymentKey;
+    private String cancelReason;
+    private String cancelledTime;
+
+    public PaymentCancellationNotificationDto(String paymentKey, String cancelReason, String cancelledTime) {
+        this.paymentKey = paymentKey;
+        this.cancelReason = cancelReason;
+        this.cancelledTime = cancelledTime;
+    }
+}
+=== ./src/main/java/com/tempo/payment/dto/PaymentCompletionNotificationDto.java ===
+
+package com.tempo.payment.dto;
+
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+
+@Getter
+@NoArgsConstructor
+public class PaymentCompletionNotificationDto {
+    private String paymentKey;
+    private String paymentMethod;
+    private String transactionTime;
+
+    public PaymentCompletionNotificationDto(String paymentKey, String paymentMethod, String transactionTime) {
+        this.paymentKey = paymentKey;
+        this.paymentMethod = paymentMethod;
+        this.transactionTime = transactionTime;
+    }
+}
+=== ./src/main/java/com/tempo/payment/dto/PaymentFailureNotificationDto.java ===
+
+package com.tempo.payment.dto;
+
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+
+@Getter
+@NoArgsConstructor
+public class PaymentFailureNotificationDto {
+    private String reason;
+
+    public PaymentFailureNotificationDto(String reason) {
+        this.reason = reason;
+    }
+}
+
+=== ./src/main/java/com/tempo/payment/dto/PaymentRequestDto.java ===
+
+package com.tempo.payment.dto;
+
+import com.tempo.payment.domain.PaymentMethod;
+import lombok.Builder;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+
+import java.math.BigDecimal;
+
+@Getter
+@NoArgsConstructor
+public class PaymentRequestDto {
+    private Long orderId;
+    private BigDecimal amount;
+    private PaymentMethod paymentMethod;
+    private String cardNumber;
+    private String cardExpiry;
+    private String cardCvc;
+
+    @Builder
+    public PaymentRequestDto(Long orderId, BigDecimal amount, PaymentMethod paymentMethod,
+                             String cardNumber, String cardExpiry, String cardCvc) {
+        this.orderId = orderId;
+        this.amount = amount;
+        this.paymentMethod = paymentMethod;
+        this.cardNumber = cardNumber;
+        this.cardExpiry = cardExpiry;
+        this.cardCvc = cardCvc;
+    }
+}
+=== ./src/main/java/com/tempo/payment/dto/PaymentResponseDto.java ===
+
+package com.tempo.payment.dto;
+
+import com.tempo.payment.domain.Payment;
+import com.tempo.payment.domain.PaymentMethod;
+import com.tempo.payment.domain.PaymentStatus;
+import lombok.Builder;
+import lombok.Getter;
+
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+
+@Getter
+public class PaymentResponseDto {
+    private final Long id;
+    private final Long orderId;
+    private final BigDecimal amount;
+    private final PaymentStatus status;
+    private final PaymentMethod paymentMethod;
+    private final LocalDateTime paidAt;
+    private final String paymentKey;
+
+    @Builder
+    public PaymentResponseDto(Payment payment) {
+        this.id = payment.getId();
+        this.orderId = payment.getOrderId();
+        this.amount = payment.getAmount();
+        this.status = payment.getStatus();
+        this.paymentMethod = payment.getPaymentMethod();
+        this.paidAt = payment.getPaidAt();
+        this.paymentKey = payment.getPaymentKey();
+    }
+}
+=== ./src/main/java/com/tempo/payment/dto/PaymentStatusRequestDto.java ===
+
+package com.tempo.payment.dto;
+
+import com.tempo.payment.domain.PaymentStatus;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+
+@Getter
+@NoArgsConstructor
+public class PaymentStatusRequestDto {
+    private PaymentStatus status;
+    private String reason;
+}
+=== ./src/main/java/com/tempo/payment/PaymentApplication.java ===
+
+package com.tempo.payment;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+@SpringBootApplication
+public class PaymentApplication {
+
+	public static void main(String[] args) {
+		SpringApplication.run(PaymentApplication.class, args);
+	}
+
+}
+
+=== ./src/main/java/com/tempo/payment/repository/PaymentRepository.java ===
+
+package com.tempo.payment.repository;
+
+import com.tempo.payment.domain.Payment;
+import com.tempo.payment.domain.PaymentStatus;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+import org.springframework.stereotype.Repository;
+
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Optional;
+
+@Repository
+public interface PaymentRepository extends JpaRepository<Payment, Long> {
+
+    // 주문 ID로 결제 정보 조회
+    Optional<Payment> findByOrderId(Long orderId);
+
+    // 결제 상태별 결제 목록 조회
+    List<Payment> findByStatus(PaymentStatus status);
+
+    // 특정 기간 내의 결제 목록 조회
+    List<Payment> findByCreatedAtBetween(LocalDateTime startDate, LocalDateTime endDate);
+
+    // 주문 ID로 완료된 결제 조회
+    Optional<Payment> findByOrderIdAndStatus(Long orderId, PaymentStatus status);
+
+    // 특정 상태의 결제 건수 조회
+    long countByStatus(PaymentStatus status);
+
+    // 결제 키로 결제 정보 조회
+    Optional<Payment> findByPaymentKey(String paymentKey);
+
+    // 특정 날짜 이후의 실패한 결제 목록 조회
+    @Query("SELECT p FROM Payment p WHERE p.status = :status AND p.createdAt >= :date")
+    List<Payment> findFailedPaymentsAfter(
+            @Param("status") PaymentStatus status,
+            @Param("date") LocalDateTime date);
+
+    // 특정 기간 내 결제 상태별 건수 조회
+    @Query("SELECT p.status, COUNT(p) FROM Payment p " +
+            "WHERE p.createdAt BETWEEN :startDate AND :endDate " +
+            "GROUP BY p.status")
+    List<Object[]> countByStatusAndDateRange(
+            @Param("startDate") LocalDateTime startDate,
+            @Param("endDate") LocalDateTime endDate);
+
+    // 미완료 상태인 오래된 결제 조회 (timeout 처리용)
+    @Query("SELECT p FROM Payment p " +
+            "WHERE p.status = :status " +
+            "AND p.createdAt < :timeoutDate")
+    List<Payment> findTimedOutPayments(
+            @Param("status") PaymentStatus status,
+            @Param("timeoutDate") LocalDateTime timeoutDate);
+}
+=== ./src/main/java/com/tempo/payment/service/PaymentService.java ===
+
+package com.tempo.payment.service;
+
+import com.tempo.payment.client.OrderServiceClient;
+import com.tempo.payment.client.PgClient;
+import com.tempo.payment.domain.Payment;
+import com.tempo.payment.domain.PaymentMethod;
+import com.tempo.payment.domain.PaymentStatus;
+import com.tempo.payment.dto.PaymentRequestDto;
+import com.tempo.payment.dto.PaymentResponseDto;
+import com.tempo.payment.repository.PaymentRepository;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import reactor.core.publisher.Mono;
+
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.stream.Collectors;
+
+@Slf4j
+@Service
+@RequiredArgsConstructor
+public class PaymentService {
+    private final PaymentRepository paymentRepository;
+    private final PgClient pgClient;
+    private final OrderServiceClient orderServiceClient;
+
+    @Transactional
+    public Mono<PaymentResponseDto> processPayment(PaymentRequestDto request) {
+        log.info("결제 처리 시작 - orderId: {}, amount: {}", request.getOrderId(), request.getAmount());
+
+        validatePaymentRequestDto(request);
+
+        Payment payment = Payment.builder()
+                .orderId(request.getOrderId())
+                .amount(request.getAmount())
+                .paymentMethod(request.getPaymentMethod())
+                .build();
+
+        Payment savedPayment = paymentRepository.save(payment);
+        log.info("결제 정보 저장 완료 - paymentId: {}", savedPayment.getId());
+
+        return pgClient.requestPayment(request)
+                .flatMap(pgResponse -> {
+                    if (pgResponse.isSuccess()) {
+                        savedPayment.setPaymentKey(pgResponse.getPaymentKey());
+                        savedPayment.updateStatus(PaymentStatus.COMPLETED);
+                        log.info("결제 성공 - paymentId: {}, paymentKey: {}",
+                                savedPayment.getId(), pgResponse.getPaymentKey());
+
+                        // 주문 서비스에 결제 완료 알림
+                        return orderServiceClient.notifyPaymentComplete(request.getOrderId())
+                                .thenReturn(savedPayment);
+                    } else {
+                        savedPayment.fail(pgResponse.getErrorMessage());
+                        log.error("결제 실패 - paymentId: {}, error: {}",
+                                savedPayment.getId(), pgResponse.getErrorMessage());
+
+                        // 주문 서비스에 결제 실패 알림
+                        return orderServiceClient.notifyPaymentFailed(request.getOrderId(),
+                                        pgResponse.getErrorMessage())
+                                .thenReturn(savedPayment);
+                    }
+                })
+                .map(updatedPayment -> {
+                    Payment finalPayment = paymentRepository.save(updatedPayment);
+                    return new PaymentResponseDto(finalPayment);
+                })
+                .doOnError(error -> {
+                    log.error("결제 처리 중 오류 발생", error);
+                    savedPayment.fail("시스템 오류: " + error.getMessage());
+                    paymentRepository.save(savedPayment);
+                });
+    }
+
+    private void validatePaymentRequestDto(PaymentRequestDto request) {
+        if (request.getAmount().signum() <= 0) {
+            throw new IllegalArgumentException("결제 금액은 0보다 커야 합니다.");
+        }
+        if (request.getOrderId() == null) {
+            throw new IllegalArgumentException("주문 ID는 필수입니다.");
+        }
+        // 카드 결제 시 카드 정보 검증
+        if (request.getPaymentMethod() == PaymentMethod.CARD) {
+            validateCardInfo(request);
+        }
+    }
+
+    private void validateCardInfo(PaymentRequestDto request) {
+        if (request.getCardNumber() == null || request.getCardNumber().length() < 15) {
+            throw new IllegalArgumentException("유효하지 않은 카드 번호입니다.");
+        }
+        if (request.getCardExpiry() == null || !request.getCardExpiry().matches("\\d{2}/\\d{2}")) {
+            throw new IllegalArgumentException("유효하지 않은 카드 유효기간입니다.");
+        }
+        if (request.getCardCvc() == null || !request.getCardCvc().matches("\\d{3}")) {
+            throw new IllegalArgumentException("유효하지 않은 CVC 번호입니다.");
+        }
+    }
+
+    @Transactional(readOnly = true)
+    public PaymentResponseDto getPayment(Long paymentId) {
+        Payment payment = paymentRepository.findById(paymentId)
+                .orElseThrow(() -> new IllegalArgumentException("결제 정보를 찾을 수 없습니다."));
+        return new PaymentResponseDto(payment);
+    }
+
+    @Transactional(readOnly = true)
+    public PaymentResponseDto getPaymentByOrderId(Long orderId) {
+        Payment payment = paymentRepository.findByOrderId(orderId)
+                .orElseThrow(() -> new IllegalArgumentException("해당 주문의 결제 정보를 찾을 수 없습니다."));
+        return new PaymentResponseDto(payment);
+    }
+
+    @Transactional
+    public PaymentResponseDto cancelPayment(Long paymentId) {
+        Payment payment = paymentRepository.findById(paymentId)
+                .orElseThrow(() -> new IllegalArgumentException("결제 정보를 찾을 수 없습니다."));
+
+        if (payment.getStatus() != PaymentStatus.COMPLETED) {
+            throw new IllegalStateException("완료된 결제만 취소할 수 있습니다.");
+        }
+
+        return pgClient.cancelPayment(payment.getPaymentKey())
+                .map(pgResponse -> {
+                    if (pgResponse.isSuccess()) {
+                        payment.updateStatus(PaymentStatus.CANCELLED);
+                        Payment cancelledPayment = paymentRepository.save(payment);
+                        // 주문 서비스에 결제 취소 알림
+                        orderServiceClient.notifyPaymentCancelled(payment.getOrderId())
+                                .subscribe();
+                        return new PaymentResponseDto(cancelledPayment);
+                    } else {
+                        throw new IllegalStateException("결제 취소 실패: " + pgResponse.getErrorMessage());
+                    }
+                })
+                .block(); // 동기적 처리를 위해 block 사용
+    }
+
+    @Transactional(readOnly = true)
+    public List<PaymentResponseDto> getPaymentsByStatus(String status) {
+        PaymentStatus paymentStatus = PaymentStatus.valueOf(status.toUpperCase());
+        return paymentRepository.findByStatus(paymentStatus)
+                .stream()
+                .map(PaymentResponseDto::new)
+                .collect(Collectors.toList());
+    }
+
+    // 타임아웃된 결제 처리 (배치 작업용)
+    @Transactional
+    public void handleTimedOutPayments() {
+        LocalDateTime timeoutCriteria = LocalDateTime.now().minusMinutes(30);
+        List<Payment> timedOutPayments = paymentRepository.findTimedOutPayments(
+                PaymentStatus.PENDING, timeoutCriteria);
+
+        for (Payment payment : timedOutPayments) {
+            payment.fail("결제 시간 초과");
+            paymentRepository.save(payment);
+            // 주문 서비스에 결제 실패 알림
+            orderServiceClient.notifyPaymentFailed(payment.getOrderId(), "결제 시간 초과")
+                    .subscribe();
+        }
+    }
+}
+=== ./src/main/resources/application.yml ===
+
+spring:
+  application:
+    name: payment-service
+  datasource:
+    url: jdbc:h2:mem:paymentdb
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+  jpa:
+    database-platform: org.hibernate.dialect.H2Dialect
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+    open-in-view: false
+
+server:
+  port: 8085
+
+# WebClient ??
+webclient:
+  order-service:
+    base-url: http://localhost:8082
+    connect-timeout: 5000
+    read-timeout: 5000
+    write-timeout: 5000
+    max-in-memory-size: 2000000
+
+# PG? ?? (????)
+pg:
+  test-mode: true
+  api:
+    key: test_key
+    secret: test_secret
+    base-url: http://localhost:9090/pg
+
+# OpenTelemetry ??
+otel:
+  traces:
+    exporter: otlp
+  metrics:
+    exporter: otlp
+  logs:
+    exporter: otlp
+  exporter:
+    otlp:
+      endpoint: http://localhost:4317
+      protocol: grpc
+  service:
+    name: ${spring.application.name}
+  resource:
+    attributes:
+      application: tempo-demo
+      environment: local
+
+logging:
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] [trace=%X{traceId:-},span=%X{spanId:-}] %-5level %logger{36} - %msg%n"
+  level:
+    root: INFO
+    com.tempo.payment: DEBUG
+    org.springframework.web: INFO
+    org.springframework.web.reactive.function.client.ExchangeFunctions: DEBUG

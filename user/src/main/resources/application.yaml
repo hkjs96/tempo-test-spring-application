@@ -1,8 +1,8 @@
 spring:
   application:
-    name: payment-service
+    name: user
   datasource:
-    url: jdbc:h2:mem:paymentdb
+    url: jdbc:h2:mem:userdb
     driver-class-name: org.h2.Driver
     username: sa
     password:
@@ -21,49 +21,39 @@ spring:
     open-in-view: false
 
 server:
-  port: 8085
+  port: 8084
 
-# WebClient ??
-webclient:
-  order-service:
-    base-url: http://localhost:8082
-    connect-timeout: 5000
-    read-timeout: 5000
-    write-timeout: 5000
-    max-in-memory-size: 2000000
-
-# PG? ?? (????)
-pg:
-  test-mode: true
-  api:
-    key: test_key
-    secret: test_secret
-    base-url: http://localhost:9090/pg
+jwt:
+  secret: "tempoDemoProjectSecretKey123456789012345678901234567890"
+  token-validity-in-seconds: 86400  # 24??
 
 # OpenTelemetry ??
 otel:
   traces:
     exporter: otlp
   metrics:
-    exporter: none
+    exporter: otlp
   logs:
     exporter: otlp
   exporter:
     otlp:
       endpoint: http://localhost:4317
       protocol: grpc
-  service:
-    name: ${spring.application.name}
-  resource:
-    attributes:
-      application: tempo-demo
-      environment: local
+  springboot:
+    enabled: true
+  instrumentation:
+    spring-webmvc:
+      enabled: true
+    spring-webflux:
+      enabled: true
+    jdbc:
+      enabled: false
 
 logging:
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] [trace=%X{traceId:-},span=%X{spanId:-}] %-5level %logger{36} - %msg%n"
   level:
     root: INFO
-    com.tempo.payment: DEBUG
+    com.tempo.user: DEBUG
     org.springframework.web: INFO
-    org.springframework.web.reactive.function.client.ExchangeFunctions: DEBUG
+    org.springframework.security: DEBUG
