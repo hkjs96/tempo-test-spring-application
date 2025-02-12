@@ -18,15 +18,12 @@ public class JwtTokenProvider {
 
     private final SecretKey key;
     private final long validityInMilliseconds;
-    private final CustomUserDetailsService userDetailsService;
 
     public JwtTokenProvider(
             @Value("${jwt.secret}") String secretKey,
-            @Value("${jwt.token-validity-in-seconds}") long validityInSeconds,
-            CustomUserDetailsService userDetailsService) {
+            @Value("${jwt.token-validity-in-seconds}") long validityInSeconds) {
         this.key = Keys.hmacShaKeyFor(secretKey.getBytes(StandardCharsets.UTF_8));
         this.validityInMilliseconds = validityInSeconds * 1000;
-        this.userDetailsService = userDetailsService;
     }
 
     public String generateToken(Authentication authentication) {
