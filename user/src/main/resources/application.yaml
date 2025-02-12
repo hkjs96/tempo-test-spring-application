@@ -5,7 +5,7 @@ spring:
     url: jdbc:h2:mem:userdb
     driver-class-name: org.h2.Driver
     username: sa
-    password:
+    password: ${DB_PASSWORD:}
   h2:
     console:
       enabled: true
@@ -19,15 +19,44 @@ spring:
       hibernate:
         format_sql: true
     open-in-view: false
+  redis:
+    host: ${REDIS_HOST:localhost}
+    port: ${REDIS_PORT:6379}
+    password: ${REDIS_PASSWORD:}
+    timeout: 3000
+    lettuce:
+      pool:
+        max-active: 8
+        max-idle: 8
+        min-idle: 2
+        max-wait: -1
 
 server:
   port: 8084
+  ssl:
+    enabled: false  # 프로덕션 환경에서는 true로 설정
+    key-store: ${SSL_KEYSTORE:}
+    key-store-password: ${SSL_KEYSTORE_PASSWORD:}
+    key-store-type: ${SSL_KEYSTORE_TYPE:PKCS12}
 
 jwt:
-  secret: "tempoDemoProjectSecretKey123456789012345678901234567890"
-  token-validity-in-seconds: 86400  # 24??
+  secret: ${JWT_SECRET:tempoDemoProjectSecretKey123456789012345678901234567890}
+  access-token-validity-in-seconds: 3600  # 1시간
+  refresh-token-validity-in-seconds: 604800  # 7일
 
-# OpenTelemetry ??
+security:
+  require-ssl: false  # 프로덕션 환경에서는 true로 설정
+  headers:
+    frame-options: DENY
+    xss-protection: 1; mode=block
+    content-security-policy: "default-src 'self'"
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:*}
+    allowed-methods: ${CORS_ALLOWED_METHODS:GET,POST,PUT,DELETE,OPTIONS}
+    allowed-headers: ${CORS_ALLOWED_HEADERS:*}
+    max-age: 3600
+
+# OpenTelemetry 설정
 otel:
   traces:
     exporter: otlp
