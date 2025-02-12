@@ -1,6 +1,9 @@
 package com.tempo.user.controller;
 
-import com.tempo.user.dto.UserDto;
+import com.tempo.user.dto.LoginRequestDto;
+import com.tempo.user.dto.SignUpRequestDto;
+import com.tempo.user.dto.TokenResponseDto;
+import com.tempo.user.dto.UserResponseDto;
 import com.tempo.user.service.UserService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -14,17 +17,17 @@ public class UserController {
     private final UserService userService;
 
     @PostMapping("/signup")
-    public ResponseEntity<UserDto.UserResponse> signup(@RequestBody UserDto.SignUpRequest request) {
+    public ResponseEntity<UserResponseDto> signup(@RequestBody SignUpRequestDto request) {
         return ResponseEntity.ok(userService.signup(request));
     }
 
     @PostMapping("/login")
-    public ResponseEntity<UserDto.TokenResponse> login(@RequestBody UserDto.LoginRequest request) {
+    public ResponseEntity<TokenResponseDto> login(@RequestBody LoginRequestDto request) {
         return ResponseEntity.ok(userService.login(request));
     }
 
     @GetMapping("/me")
-    public ResponseEntity<UserDto.UserResponse> getMyInfo() {
+    public ResponseEntity<UserResponseDto> getMyInfo() {
         return ResponseEntity.ok(userService.getMyInfo());
     }
 }
